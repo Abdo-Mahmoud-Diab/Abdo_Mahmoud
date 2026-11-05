@@ -1,349 +1,49 @@
-# ============================================================
-# ملف Workflow كامل ومكتمل بنسبة 100% — سيرفر RDP سحابي خارق
-# نظام التشغيل: Windows Server (windows-latest) عبر GitHub Actions
-# سرعة اتصال: جيجابت سحابية | المدة: تصل إلى 6 ساعات كاملة
-# التشغيل: من تبويب Actions في الريبو ← RDP Cloud Server ← Run workflow
-# ============================================================
-# الأسرار المطلوبة في إعدادات الريبو (Settings ← Secrets and variables ← Actions):
-#   1) RDP_PASSWORD       ← باسورد حساب RDP (مطلوب للاتصال بسطح المكتب)
-#   2) TAILSCALE_AUTHKEY  ← مفتاح الربط من لوحة Tailscale (مطلوب للشبكة الآمنة)
-#   3) MOONSHOT_API_KEY   ← اختياري: مفتاح الذكاء الاصطناعي لوكيل Kimi Code
-# ============================================================
-
 name: RDP Cloud Server (Tailscale)
 
 on:
   workflow_dispatch:
-    inputs:
-      rdp_user:
-        description: 'اسم مستخدم سطح المكتب البعيد'
-        required: false
-        default: 'AbdoDiab'
 
 jobs:
   rdp:
     runs-on: windows-latest
     timeout-minutes: 360
 
-    # ============================================================
-    # الروابط والمصادر المباشرة — مجهزة بأفضل البدائل والمصادر المستقرة
-    # ============================================================
-    env:
-      # رابط نسخة كاب كات الكلاسيكية المستقرة (التي لا تجبرك على تحديثات أو ميزات مدفوعة)
-      CAPCUT_OLD_URL: 'https://archive.org/download/capcut-2-5-0-PC/CapCut_2_5_0_installer.exe'
-
-      # روابط حزم أدوبي المحمولة (Portable) — ضع روابطك المباشرة هنا مفصولة بفواصل
-      # مثال: 'https://archive.org/download/.../Photoshop_Portable.zip,https://archive.org/download/.../Premiere_Portable.zip'
-      ADOBE_ZIP_URLS: ''
-
-      # رابط حزمة الخطوط — حزمة أرشيف لأشهر الخطوط العربية العصرية (Cairo, Tajawal, Almarai, etc.)
-      FONTS_ZIP_URL: 'https://github.com/google/fonts/archive/refs/heads/main.zip'
-
-      # رابط المثبت الرسمي لمحاكي GameLoop من سيرفرات تينسنت الرسمية
-      GAMELOOP_URL: 'https://web-gameloop-cdn.gameloop.com/installation/gameloop_website.exe'
-
     steps:
-      # ============================================================
-      # 1) إعداد الحماية وتفعيل RDP وإنشاء مستخدم Administrator
-      # ============================================================
-      - name: 1) تفعيل RDP وإنشاء المستخدم
+      - name: 1) تفعيل سطح المكتب البعيد وإنشاء المستخدم
         shell: powershell
         env:
           RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
-          RDP_USER: ${{ inputs.rdp_user }}
         run: |
           Write-Host "::add-mask::$env:RDP_PASSWORD"
-          if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
-            Write-Error "تحذير: سر RDP_PASSWORD غير محدد في Secrets! الرجاء إضافته في إعدادات الريبو أولاً."
-            exit 1
-          }
+          $pass = if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) { "Abdo@2026Pass" } else { $env:RDP_PASSWORD }
           
-          # تفعيل Remote Desktop في نظام الويندوز
+          # تفعيل RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
           Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
           
-          # إنشاء المستخدم بصلاحيات مسؤول كاملة
-          net user $env:RDP_USER $env:RDP_PASSWORD /add /y
-          net localgroup administrators $env:RDP_USER /add
-          Write-Host "✓ تم تفعيل RDP وإنشاء حساب المسؤول بنجاح: $env:RDP_USER"
+          # إنشاء مستخدم باسم AbdoDiab
+          net user AbdoDiab $pass /add /y
+          net localgroup administrators AbdoDiab /add
+          Write-Host "تم إنشاء مستخدم RDP بنجاح!"
 
-      # ============================================================
-      # 2) تثبيت وربط شبكة Tailscale الآمنة للحصول على IP مباشر
-      # ============================================================
-      - name: 2) تثبيت Tailscale والربط بالشبكة
+      - name: 2) ربط شبكة Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          version: latest
+
+      - name: 3) عرض الـ IP والاتصال
         shell: powershell
-        env:
-          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
         run: |
-          Write-Host "::add-mask::$env:TAILSCALE_AUTHKEY"
-          if ([string]::IsNullOrWhiteSpace($env:TAILSCALE_AUTHKEY)) {
-            Write-Error "تحذير: سر TAILSCALE_AUTHKEY غير محدد! لا يمكن ربط السيرفر بالشبكة بدونه."
-            exit 1
-          }
-
-          Write-Host "جاري تثبيت عميل Tailscale..."
-          winget install --id Tailscale.Tailscale -e --silent --accept-source-agreements --accept-package-agreements
+          $ip = tailscale ip -4
+          Write-Host "=========================================="
+          Write-Host "عنوان IP للاتصال هو:"
+          Write-Host ">>> $ip <<<"
+          Write-Host "اسم المستخدم: AbdoDiab"
+          Write-Host "=========================================="
           
-          $tailscale = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          & $tailscale up --authkey=$env:TAILSCALE_AUTHKEY --hostname="github-rdp-cloud" --accept-routes
-          
-          Write-Host "============================================================"
-          Write-Host "✓ تم الاتصال بشبكة Tailscale بنجاح!"
-          Write-Host "عنوان IP السحابي المباشر هو:"
-          & $tailscale ip -4
-          Write-Host "============================================================"
-
-      # ============================================================
-      # 3) تثبيت البرامج الأساسية بالتوازي (Parallel Install)
-      # ============================================================
-      - name: 3) تثبيت البرامج الأساسية
-        shell: powershell
-        run: |
-          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-            Set-ExecutionPolicy Bypass -Scope Process -Force
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-            iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          }
-
-          Write-Host "جاري تثبيت البرامج الأساسية بالتوازي..."
-          $apps = @('Google.Chrome', '7zip.7zip', 'VideoLAN.VLC', 'voidtools.Everything', 'Git.Git')
-          $jobs = foreach ($app in $apps) {
-            Start-Job -ScriptBlock { 
-              param($id) 
-              winget install --id $id -e --silent --accept-source-agreements --accept-package-agreements --force
-            } -ArgumentList $app
-          }
-          $jobs | Wait-Job | Receive-Job
-          Write-Host "✓ اكتمل تثبيت البرامج الأساسية."
-
-      # ============================================================
-      # 4) أدوات الميديا والتحميل السريع (FFmpeg, yt-dlp, aria2)
-      # ============================================================
-      - name: 4) أدوات الميديا والتحميل السريع
-        shell: powershell
-        run: |
-          Write-Host "جاري تثبيت محركات الميديا والتحميل..."
-          $tools = @('Gyan.FFmpeg', 'yt-dlp.yt-dlp', 'aria2.aria2')
-          $jobs = foreach ($tool in $tools) {
-            Start-Job -ScriptBlock { 
-              param($t) 
-              winget install --id $t -e --silent --accept-source-agreements --accept-package-agreements --force
-            } -ArgumentList $tool
-          }
-          $jobs | Wait-Job | Receive-Job
-
-          $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path', 'User')
-          Write-Host "✓ FFmpeg و yt-dlp و aria2 جاهزة في المسار PATH."
-
-      # ============================================================
-      # 5) تثبيت برنامج CapCut القديم المستقر + حظر التحديث التلقائي
-      # ============================================================
-      - name: 5) تثبيت CapCut المستقر وحظر التحديث
-        shell: powershell
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:CAPCUT_OLD_URL)) {
-            Write-Host "تخطي: لم يتم تحديد رابط CapCut."
-            exit 0
-          }
-          
-          $installer = "$env:TEMP\CapCut_installer.exe"
-          Write-Host "تحميل CapCut بسرعة سحابية عبر aria2c..."
-          if (Get-Command aria2c -ErrorAction SilentlyContinue) {
-            aria2c -x 16 -s 16 -k 1M -o "CapCut_installer.exe" -d "$env:TEMP" "$env:CAPCUT_OLD_URL"
-          } else {
-            Start-BitsTransfer -Source $env:CAPCUT_OLD_URL -Destination $installer
-          }
-
-          if (Test-Path $installer) {
-            Write-Host "جاري التثبيت الصامت لبرنامج CapCut..."
-            Start-Process -FilePath $installer -ArgumentList '/S' -Wait
-            
-            # حظر برامج التحديث في جدار الحماية لمنع فرض الإصدارات الجديدة
-            $updaters = Get-ChildItem "$env:LOCALAPPDATA\CapCut" -Recurse -Filter '*update*.exe' -ErrorAction SilentlyContinue
-            foreach ($up in $updaters) {
-              New-NetFirewallRule -DisplayName "Block CapCut Update ($($up.Name))" -Direction Outbound -Program $up.FullName -Action Block -ErrorAction SilentlyContinue
-            }
-            Write-Host "✓ تم تثبيت CapCut وتأمين النسخة القديمة بنجاح."
-          }
-
-      # ============================================================
-      # 6) تجهيز حزم تشغيل التصميم وبرامج Adobe Portable
-      # ============================================================
-      - name: 6) حزم التشغيل وبرامج Adobe Portable
-        shell: powershell
-        run: |
-          Write-Host "تثبيت حزم Visual C++ Runtimes و DirectX و .NET Framework..."
-          choco install vcredist-all directx -y --no-progress
-          Enable-WindowsOptionalFeature -Online -FeatureName NetFx3 -All -NoRestart -ErrorAction SilentlyContinue
-
-          $adobeDir = "$env:USERPROFILE\Desktop\Adobe_Apps"
-          New-Item -ItemType Directory -Force -Path $adobeDir | Out-Null
-
-          if (-not [string]::IsNullOrWhiteSpace($env:ADOBE_ZIP_URLS)) {
-            $urls = $env:ADOBE_ZIP_URLS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-            foreach ($url in $urls) {
-              $fileName = [System.IO.Path]::GetFileName($url)
-              $destZip = Join-Path $env:TEMP $fileName
-              Write-Host "جاري تحميل الحزمة: $fileName"
-              if (Get-Command aria2c -ErrorAction SilentlyContinue) {
-                aria2c -x 16 -s 16 -o $fileName -d "$env:TEMP" "$url"
-              } else {
-                Start-BitsTransfer -Source $url -Destination $destZip
-              }
-
-              $folderName = [System.IO.Path]::GetFileNameWithoutExtension($destZip)
-              $targetFolder = Join-Path $adobeDir $folderName
-              
-              if ($destZip -match '\.7z$') {
-                & 7z x $destZip "-o$targetFolder" -y | Out-Null
-              } else {
-                Expand-Archive -Path $destZip -DestinationPath $targetFolder -Force
-              }
-
-              $exe = Get-ChildItem $targetFolder -Recurse -Filter '*.exe' | Select-Object -First 1
-              if ($exe) {
-                $ws = New-Object -ComObject WScript.Shell
-                $sc = $ws.CreateShortcut("$env:USERPROFILE\Desktop\$folderName.lnk")
-                $sc.TargetPath = $exe.FullName
-                $sc.WorkingDirectory = $exe.DirectoryName
-                $sc.Save()
-                Write-Host "✓ تم إنشاء اختصار: $folderName على سطح المكتب."
-              }
-            }
-          } else {
-            Write-Host "ملحوظة: لم يتم إدخال روابط في ADOBE_ZIP_URLS (تم تخطي فك برامج أدوبي المحمولة)."
-          }
-
-      # ============================================================
-      # 7) تثبيت محاكي GameLoop الرسمي
-      # ============================================================
-      - name: 7) تثبيت محاكي GameLoop
-        shell: powershell
-        run: |
-          $installer = "$env:TEMP\GameLoop_Setup.exe"
-          if (-not [string]::IsNullOrWhiteSpace($env:GAMELOOP_URL)) {
-            Write-Host "تحميل GameLoop من الرابط الرسمي المباشر..."
-            try {
-              if (Get-Command aria2c -ErrorAction SilentlyContinue) {
-                aria2c -x 8 -s 8 -o "GameLoop_Setup.exe" -d "$env:TEMP" "$env:GAMELOOP_URL"
-              } else {
-                Start-BitsTransfer -Source $env:GAMELOOP_URL -Destination $installer
-              }
-              Start-Process -FilePath $installer -ArgumentList '/S' -Wait
-              Write-Host "✓ تم تثبيت GameLoop بنجاح."
-            } catch {
-              Write-Host "فشل الرابط المباشر، جاري التثبيت عبر Winget..."
-              winget install --id Tencent.GameLoop -e --silent --accept-source-agreements --accept-package-agreements --force
-            }
-          } else {
-            winget install --id Tencent.GameLoop -e --silent --accept-source-agreements --accept-package-agreements --force
-          }
-
-      # ============================================================
-      # 8) تجهيز وكيل Kimi Code CLI الذكي بالكامل
-      # ============================================================
-      - name: 8) تجهيز وكيل Kimi Code (Moonshot AI)
-        shell: powershell
-        env:
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
-        run: |
-          Write-Host "تثبيت بيئة Node.js LTS المطلوبة لتشغيل Kimi Code CLI..."
-          winget install --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
-          $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path', 'User')
-
-          Write-Host "تثبيت حزمة Kimi Code الرسمية عالميًا عبر npm..."
-          npm install -g @moonshot-ai/kimi-code
-
-          if (-not [string]::IsNullOrWhiteSpace($env:MOONSHOT_API_KEY)) {
-            Write-Host "::add-mask::$env:MOONSHOT_API_KEY"
-            [System.Environment]::SetEnvironmentVariable('MOONSHOT_API_KEY', $env:MOONSHOT_API_KEY, 'User')
-            Write-Host "✓ تم ربط MOONSHOT_API_KEY بنجاح."
-          }
-
-          $launcherPath = "$env:USERPROFILE\Desktop\Launch_Kimi_Code.cmd"
-          "@echo off`ntitle Kimi Code Agent`ncd /d %USERPROFILE%\Desktop`nkimi`npause" | Out-File -FilePath $launcherPath -Encoding ascii
-          Write-Host "✓ تم إنشاء أيقونة تشغيل Kimi Code على سطح المكتب."
-
-      # ============================================================
-      # 9) تثبيت وتسجيل حزمة الخطوط تلقائيًا في الويندوز
-      # ============================================================
-      - name: 9) تثبيت الخطوط وتسجيلها في النظام
-        shell: powershell
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:FONTS_ZIP_URL)) {
-            Write-Host "تخطي: لا يوجد رابط خطوط."
-            exit 0
-          }
-          
-          $fontsZip = "$env:TEMP\fonts.zip"
-          Write-Host "جاري تحميل حزمة الخطوط..."
-          try {
-            if (Get-Command aria2c -ErrorAction SilentlyContinue) {
-              aria2c -x 8 -s 8 -o "fonts.zip" -d "$env:TEMP" "$env:FONTS_ZIP_URL"
-            } else {
-              Start-BitsTransfer -Source $env:FONTS_ZIP_URL -Destination $fontsZip
-            }
-
-            $extractDir = "$env:TEMP\fonts_extracted"
-            Expand-Archive -Path $fontsZip -DestinationPath $extractDir -Force
-
-            $regPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
-            $fontFiles = Get-ChildItem $extractDir -Recurse -Include '*.ttf', '*.otf'
-            Write-Host "تم العثور على $($fontFiles.Count) خط، جاري التثبيت في الويندوز..."
-            foreach ($f in $fontFiles) {
-              Copy-Item $f.FullName 'C:\Windows\Fonts' -Force
-              $regName = $f.BaseName + ' (TrueType)'
-              if ($f.Extension -eq '.otf') { $regName = $f.BaseName + ' (OpenType)' }
-              New-ItemProperty -Path $regPath -Name $regName -Value $f.Name -PropertyType String -Force -ErrorAction SilentlyContinue | Out-Null
-            }
-            Write-Host "✓ تم تثبيت وتسجيل الخطوط بنجاح (تظهر في البرامج مباشرة دون إعادة تشغيل)."
-          } catch {
-            Write-Host "تنبيه: تم التخطي بدون أخطاء."
-          }
-
-      # ============================================================
-      # 10) إضافات متصفح Chrome الرسمية التلقائية عبر السياسات
-      # ============================================================
-      - name: 10) تثبيت إضافات Chrome الأساسية
-        shell: powershell
-        run: |
-          Write-Host "ضبط سياسات المتصفح لتثبيت الإضافات الرسمية..."
-          $policy = 'HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist'
-          New-Item -Path $policy -Force | Out-Null
-
-          # 1. إضافة uBlock Origin لمنع الإعلانات تماماً
-          New-ItemProperty -Path $policy -Name '1' -Value 'cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx' -PropertyType String -Force | Out-Null
-          
-          # 2. إضافة Video DownloadHelper الرسمية لتحميل أي فيديو
-          New-ItemProperty -Path $policy -Name '2' -Value 'lmjnegcaeklhafolokijcfjliaokphfk;https://clients2.google.com/service/update2/crx' -PropertyType String -Force | Out-Null
-
-          # 3. إضافة CoCoCut Video Downloader الشهيرة
-          New-ItemProperty -Path $policy -Name '3' -Value 'ekhbcipncbkfpkaianbjbcbmfehjflpf;https://clients2.google.com/service/update2/crx' -PropertyType String -Force | Out-Null
-
-          Write-Host "✓ تم تسجيل إضافات Chrome: uBlock Origin و Video DownloadHelper و CoCoCut."
-
-      # ============================================================
-      # 11) إبقاء السيرفر نشطاً ومراقبة الاتصال (حتى 6 ساعات)
-      # ============================================================
-      - name: 11) إبقاء السيرفر السحابي يعمل
-        shell: powershell
-        run: |
-          $tailscale = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          $serverIP = & $tailscale ip -4
-          
-          Write-Host "============================================================"
-          Write-Host "🎉 سيرفرك السحابي الخارق يعمل الآن بكامل طاقته!"
-          Write-Host "👉 اتصل عبر برنامج Remote Desktop Connection باستخدام الـ IP التالي:"
-          Write-Host "   $serverIP"
-          Write-Host "👤 اسم المستخدم: $env:RDP_USER"
-          Write-Host "🔑 كلمة المرور: هي التي عينتها في Secret باسم RDP_PASSWORD"
-          Write-Host "============================================================"
-
-          # البقاء حياً لمدة تصل إلى 6 ساعات مع تحديث السجل كل 5 دقائق
-          $totalMinutes = 350
-          $elapsed = 0
-          while ($elapsed -lt $totalMinutes) {
+          # إبقاء السيرفر شغال حتى 6 ساعات
+          for ($i = 0; $i -lt 72; $i++) {
             Start-Sleep -Seconds 300
-            $elapsed += 5
-            Write-Host "السيرفر نشط... مضى $elapsed دقيقة من أصل $totalMinutes دقيقة."
+            Write-Host "السيرفر شغال ونشط..."
           }
